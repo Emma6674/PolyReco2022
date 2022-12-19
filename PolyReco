@@ -1,0 +1,652 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.cluster import DBSCAN
+import os
+import numpy as np
+
+
+class Draw_Kuang():
+    '''
+    参数说明：csvpath blockinfo的csv文件
+            len1 要参考的长度文件
+            len2 要研究的长度文件
+            chr1s 研究染色体的号
+            chr2s 参考染色体的号
+            spath1  聚类完存储文件路径
+            spath2  整理完存储文件路径
+            spath3 组合完存储文件路径
+    '''
+    def __init__(self,csvpath,chr1s,chr2s,spath1,spath2,spath3,len1s,len2s):
+        self.csvpath = csvpath
+        self.chr1s = chr1s
+        self.chr2s = chr2s
+        self.spath1 = spath1
+        self.spath2 = spath2
+        self.spath3 = spath3
+        self.len1s = len1s
+        self.len2s = len2s
+    def huatu(self,img='yuantu.png'):
+        bl = pd.read_csv(self.csvpath)
+        chrlens_y = pd.read_csv(self.len2s,header=None,sep = '\t')
+        chrlens_x = pd.read_csv(self.len1s,header=None,sep = '\t')
+        chrlens_x[3] = chrlens_x[2].values / chrlens_x[2].sum() * 1000
+        chrlens_x[3] = chrlens_x[3].apply(lambda x:int(x))
+        chrlens_y[3] = chrlens_y[2].values / chrlens_y[2].sum() * 1000
+        chrlens_y[3] = chrlens_y[3].apply(lambda x:int(x))
+        width = []
+        height = []
+        for i in self.chr1s:
+            wid = chrlens_x[chrlens_x[0]==i][3].values[0]
+            width.append(wid)
+        for i in self.chr2s:
+            hei = chrlens_y[chrlens_y[0]==i][3].values[0]
+            height.append(hei)
+        plt.figure(figsize=(len(self.chr1s),len(self.chr2s)), dpi=100)  #在前边动态设置根据要画几个图，len
+        gs = plt.GridSpec(sum(height),sum(width),wspace=0, hspace=0)
+        w = 0
+        h = 0
+        for p in range(len(self.chr2s)): #行
+            w = 0
+            for k in range(len(self.chr1s)):  #列
+                bla = bl[bl['chr1']==self.chr1s[k]]
+                bla = bla[bla['chr2']==self.chr2s[p]]
+                bla = bla[bla["pvalue"] <0.01]
+                bla["block1"]= bla["block1"].apply(lambda x: x.split('_'))
+                bla["block2"] = bla["block2"].apply(lambda x: x.split('_'))
+                x = []
+                y = []
+                for i in bla["block1"]:
+                    x = x + i
+                for i in bla["block2"]:
+                    y = y + i
+                n_x = [int(i) for i in x]
+                n_y = [int(i) for i in y]
+                chrlen_y = chrlens_y[chrlens_y[0]==chr2s[p]][2].values[0]
+                y1 = [chrlen_y-i for i in n_y]
+                chrlen_x = chrlens_x[chrlens_x[0]==chr1s[k]][2].values[0]
+                ax = plt.subplot(gs[h:h+height[p], w:w+width[k]])
+                w += width[k]
+
+                ax.scatter(n_x, y1, s=0.3, c='red')
+                ax.set_xticks([]),ax.set_yticks([])
+                try:
+                    ax.set_xlim(-20,max(n_x)+100)
+                except:
+                    ''
+                ax.set_ylim(0,chrlen_y)
+                if k==0:
+                    ax.set_ylabel(chr2s[p])  
+                if p==0:
+                    ax.set_title(chr1s[k])
+            h += height[p]
+        plt.savefig(img)
+        plt.show() 
+        
+    def cells(self,eps=50,min_samples=3,img='cluster.png') :
+        columns = ['chr1','chr2','id','l_x','l_y','num','r_x','r_y','y1-y2','x1-x2']
+
+        ks = pd.read_csv(self.csvpath)
+        chrlens_y = pd.read_csv(self.len2s,header=None,sep = '\t')
+        chrlens_x = pd.read_csv(self.len1s,header=None,sep = '\t')
+        for chr2 in self.chr2s:
+            ks_chr2 = ks[ks["chr2"]==chr2]
+            ks_chr2 = ks_chr2[ks_chr2["pvalue"] <0.01] 
+            for chr1 in self.chr1s:
+                ks_chr1 = ks_chr2[ks_chr2["chr1"]==chr1]
+                ks_chr1["block1"]= ks_chr1["block1"].apply(lambda x: x.split('_'))
+                ks_chr1["block2"] = ks_chr1["block2"].apply(lambda x: x.split('_'))
+                x = []
+                y = []
+                for i in ks_chr1["block1"]:
+                    x = x + i
+                for i in ks_chr1["block2"]:
+                    y = y + i
+                n_x = [int(i) for i in x]
+                n_y = [int(i) for i in y]
+                chrlen = chrlens_y[chrlens_y[0]==chr2][2].values[0]
+                y1 = [chrlen-i for i in n_y]
+                try:
+                    data = pd.DataFrame({'x':n_x, 'y':y1})
+                    model = DBSCAN(eps=eps, min_samples=min_samples).fit(data)
+                    auto_label = model.labels_
+                    lable = set(auto_label)
+                    data.index=auto_label
+                    kuang = []
+                    s = 0
+                    for i in lable:
+                        df = data[data.index==i]
+                        s+=len(df)
+                    ag_d = s/(len(lable))##################################
+
+                    for i in lable:
+                        if i!=-1:
+                            df = data[data.index==i]
+                            lu_x = df.x.min()
+                            lu_y = df.y.max()
+                            rd_x = df.x.max()
+                            rd_y = df.y.min()
+                            kuang.append([[lu_x,lu_y],[rd_x,rd_y],lu_y-rd_y,len(df)])
+                    kuang.sort(key=lambda x : x[0][1],reverse=True)
+                    print(kuang)
+                    a_data = []
+                    k=1
+                    for i in kuang:
+                        n_df = {"chr1":chr1,
+                                 "chr2":chr2,
+                                "id":k,
+                                 "l_x":i[0][0],
+                                 "l_y":i[0][1],
+                                "r_x":i[1][0],
+                                "r_y":i[1][1],
+                                "y1-y2":i[2],
+                               "num":i[3],
+                               "x1-x2":i[1][0]-i[0][0]}  #
+                        k=k+1
+                        a_data.append(n_df)
+                    df = pd.DataFrame(a_data)
+                    self.savefile(df,self.spath1,columns)
+                except:
+                    print(1111) 
+        self.draw_k(self.spath1,img)
+    def cells_last(self,img='conbine.png'):
+        columns = ['chr1','chr2','id','l_x','l_y','num','r_x','r_y','y1-y2','x1-x2']
+        data = pd.read_csv(self.spath1,usecols=[0,1,2,3,4,5,6,7,8])
+        chrlens_x = pd.read_csv(self.len1s,header=None,sep = '\t')
+        for chr1 in self.chr1s:
+            for chr2 in self.chr2s:
+                wid = chrlens_x[chrlens_x[0]==chr1][2].values[0] // 6  ###############################
+                data_1 = data[data['chr1']==chr1]
+                data_1 = data_1[data_1['chr2']==chr2]
+                train_data = np.array(data_1) #先将数据框转换为数组
+                kuang = train_data.tolist()
+                su = 0
+                if len(kuang)>=1:
+                    ag = 0
+                else:
+                    for i in range(len(kuang)-1):
+                        su+= kuang[i][4]-kuang[i+1][4]
+                    ag = su/(len(kuang)-1)
+                kuang = [i for i in kuang if i[5]>32]################################################
+                if len(kuang)>=1:
+                    a = []
+                      #####################
+                    for i in range(len(kuang)):#-1,-1,-1
+                        for j in range(len(kuang)):#-1,-1,-1
+                            if i!=j :  
+                                l_y = kuang[i][4]
+                                l_x = kuang[i][3]
+                                r_y = kuang[i][7]
+                                r_x = kuang[i][6]
+                                nl_y = kuang[j][4]
+                                nl_x = kuang[j][3]
+                                nr_y = kuang[j][7]
+                                nr_x = kuang[j][6]
+                                if ((r_y-nl_y)<=ag and (r_y-nl_y)>=0  and  (l_x-nr_x)<wid): ################
+                                    print(1234)
+                                    kuang[i][4]=max(l_y,nl_y)
+                                    kuang[i][7]=min(r_y,nr_y)
+                                    kuang[j][4] = max(l_y, nl_y)
+                                    kuang[j][7] = min(r_y, nr_y)
+                                    kuang[i][3] = min(l_x , nl_x)
+                                    kuang[i][6] = max(r_x , nr_x)
+                                    kuang[j][3] = min(l_x, nl_x)
+                                    kuang[j][6] = max(r_x,nr_x)
+                                    kuang[i][8] = kuang[i][4] - kuang[i][7]
+                                    kuang[j][8] = kuang[j][4] - kuang[j][7]
+                                    kuang[i][5] += kuang[j][5]
+                                    kuang[j][5] =kuang[i][5]
+                                    kuang[i][2] = kuang[i][2]
+                                    kuang[j][2] = kuang[i][2]
+                                    flage = True
+                                    for k in range(len(a)):
+                                        if i in a[k]:
+                                            a[k].append(j)
+                                            for p in a[k]:
+                                                kuang[p][4] = kuang[a[k][-1]] [4]
+                                                kuang[p][7] = kuang[a[k][-1]] [7]
+                                                kuang[p][6] = kuang[a[k][-1]] [6]
+                                                kuang[p][3] = kuang[a[k][-1]] [3]
+                                                kuang[p][5] = kuang[a[k][-1]][5]
+                                                kuang[p][8] = kuang[a[k][-1]][8]
+                                            flage = False
+                                            break
+                                    if flage:
+                                        a.append([i,j]) 
+
+                    n_k = []
+                    for i in kuang:
+                        if i not in n_k:
+                            n_k.append(i)
+                    a = []
+                    for i in range(len(n_k)):#-1,-1,-1
+                        for j in range(len(n_k)):#-1,-1,-1
+                            if (i!=j) :
+                                l_y = n_k[i][4]
+                                l_x = n_k[i][3]
+                                r_y = n_k[i][7]
+                                r_x = n_k[i][6]
+                                nl_y = n_k[j][4]
+                                nl_x = n_k[j][3]
+                                nr_y = n_k[j][7]
+                                nr_x = n_k[j][6]
+                                if (nl_y<l_y and nl_y>r_y and (l_x-nr_x)<wid):  #######################
+                                    n_k[i][4]=max(l_y,nl_y)
+                                    n_k[i][7]=min(r_y,nr_y)
+                                    n_k[j][4] = max(l_y, nl_y)
+                                    n_k[j][7] = min(r_y, nr_y)
+                                    n_k[i][3] = min(l_x , nl_x)
+                                    n_k[i][6] = max(r_x , nr_x)
+                                    n_k[j][3] = min(l_x, nl_x)
+                                    n_k[j][6] = max(r_x,nr_x)
+                                    n_k[i][8] = n_k[i][4] - n_k[i][7]
+                                    n_k[j][8] = n_k[j][4] - n_k[j][7]
+                                    n_k[i][5] += n_k[j][5]
+                                    n_k[j][5] =n_k[i][5]
+                                    n_k[i][2] = n_k[i][2]
+                                    n_k[j][2] = n_k[i][2]
+                                    flage = True
+                                    for k in range(len(a)):
+                                        if i in a[k]:
+                                            a[k].append(j)
+                                            for p in a[k]:
+                                                n_k[p][4] = n_k[a[k][-1]] [4]
+                                                n_k[p][7] = n_k[a[k][-1]] [7]
+                                                n_k[p][6] = n_k[a[k][-1]] [6]
+                                                n_k[p][3] = n_k[a[k][-1]] [3]
+                                                n_k[p][5] = n_k[a[k][-1]][5]
+                                                n_k[p][8] = n_k[a[k][-1]][8]
+                                            flage = False
+                                            break
+                                    if flage:
+                                        a.append([i,j]) 
+                    s_k = []
+                    for i in n_k:
+                        if i not in s_k :  ####################
+                            s_k.append(i)
+                    a_data = []
+                    k=1
+                    for i in s_k:
+                        n_df = {"chr1":i[0],
+                                 "chr2":i[1],
+                                "id":k,
+                                 "l_x":i[3],
+                                 "l_y":i[4],
+                                "r_x":i[6],
+                                "r_y":i[7],
+                                "y1-y2":i[8],
+                               "num":i[5],
+                               "x1-x2":i[6]-i[3]}
+                        k=k+1
+                        a_data.append(n_df)
+                    df = pd.DataFrame(a_data)
+                    try:
+                        self.savefile(df,self.spath2,columns)
+                    except:
+                        ""
+        self.draw_k(self.spath2,img)
+    def find_max(self,df):
+        m = df[df['y1-y2']==df['y1-y2'].max()]
+        try:
+            l_y = m.iloc[0,4]
+            df1 = df[df["r_y"] > l_y]
+        except:
+            df1 = ''
+        try:
+            r_y = m.iloc[0,7]  
+            df2 = df[df["l_y"] < r_y] 
+        except:
+            df2 = ''
+        return m,df1,df2
+    def cunzai(self,m,df,sumy):
+        sumy += m.iloc[0,8]
+        info = np.array(m).tolist()[0]
+        df.drop(index=[m.index[0]],inplace=True)
+        return sumy,info
+    def zuhe(self,img='zuhe.png'):
+        columns = ['chr1','chr2','id','l_x','l_y','num','r_x','r_y','sumy','y1-y2','zuheid','x1-x2']
+        data = pd.read_csv(self.spath2)
+        chr2s=list(set(data['chr2']))
+        for chr2 in chr2s:
+            df = data[data['chr2']==chr2]
+            a_zuhe = []
+            a_sumy = []
+            for i in range(6):
+                o_zuhe = []
+                sumy = 0
+                try:
+                    m,df1,df2 = self.find_max(df)
+                    if(m.empty==False):
+                        sumy,info = self.cunzai(m,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    break
+                try:
+                    m1,df1_1,df1_2 = self.find_max(df1)
+                    if(m1.empty==False):
+                        sumy,info = self.cunzai(m1,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m1 = ''
+                try:
+                    m2,df2_1,df2_2 = self.find_max(df2)
+                    if(m2.empty==False):
+                        sumy,info = self.cunzai(m2,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m2 = ''
+                try:
+                    m3,df1_1_1,df1_1_2 = self.find_max(df1_1)
+                    if(m3.empty==False):
+                        sumy,info = self.cunzai(m3,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m3 = ''
+                try:  
+                    m4,df1_2_1,df1_2_2 = self.find_max(df1_2)
+                    if(m4.empty==False):
+                        sumy,info = self.cunzai(m4,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m4 = ''
+                try: 
+                    m5,df2_1_1,df2_1_2 = self.find_max(df2_1)
+                    if(m5.empty==False):
+                        sumy,info = self.cunzai(m5,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m5 = ''
+                try:
+                    m6,df2_2_1,df2_2_2 = self.find_max(df2_2)
+                    if(m6.empty==False):
+                        sumy,info = self.cunzai(m6,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m6 = ''
+                try:
+                    m7,df1_1_1_1,df1_1_1_2 = self.find_max(df1_1_1)
+                    if(m7.empty==False):
+                        sumy,info = self.cunzai(m7,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m7 = ''
+                try:
+                    m8,df1_1_2_1,df1_1_2_2 = self.find_max(df1_1_2)
+                    if(m8.empty==False):
+                        sumy,info = self.cunzai(m8,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m8 = ''
+                try:
+                    m9,df1_2_1_1,df1_2_1_2 = self.find_max(df1_2_1)
+                    if(m9.empty==False):
+                        sumy,info = self.cunzai(m9,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m9 = ''
+                try:
+                    m10,df1_2_2_1,df1_2_2_2 = self.find_max(df1_2_2)
+                    if(m10.empty==False):
+                        sumy,info = self.cunzai(m10,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m10 = ''
+                try:
+                    m11,df2_1_1_1,df2_1_1_2 = self.find_max(df2_1_1)
+                    if(m11.empty==False):
+                        sumy,info = self.cunzai(m11,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m11 = ''
+                try:
+                    m12,df2_1_2_1,df2_1_2_2 = self.find_max(df2_1_2)
+                    if(m12.empty==False):
+                        sumy,info = self.cunzai(m12,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m12 = ''
+                try:
+                    m13,df2_2_1_1,df2_2_1_2 = self.find_max(df2_2_1)
+                    if(m13.empty==False):
+                        sumy,info = self.cunzai(m13,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m13 = ''
+                try:
+                    m14,df2_2_2_1,df2_2_2_2 = self.find_max(df2_2_2)
+                    if(m14.empty==False):
+                        sumy,info = self.cunzai(m14,df,sumy)
+                        o_zuhe.append(info)
+                except:
+                    m14 = ''
+
+                if o_zuhe==[] :
+                    print(1)
+                    break
+                for j in o_zuhe:
+                    n_df = {"chr1":j[0],
+                             "chr2":j[1],
+                            "id":j[2],
+                             "l_x":j[3],
+                             "l_y":j[4],
+                            "r_x":j[6],
+                            "r_y":j[7],
+                            "y1-y2":j[8],
+                           "num":j[5],
+                           "zuheid":i+1,
+                           "sumy":sumy,
+                           "x1-x2":j[6]-j[3]}                    
+                    a_zuhe.append(n_df)
+                a_sumy.append(sumy)
+            df = pd.DataFrame(a_zuhe)
+            self.savefile(df,self.spath3,columns)
+            self.draw_k(self.spath3,img)
+    
+    def draw_k(self,kuang_data,imgname):
+        bl = pd.read_csv(self.csvpath)
+        kuang = pd.read_csv(kuang_data)
+        train_data = np.array(kuang) #先将数据框转换为数组
+        n_k = train_data.tolist()
+        chrlens_y = pd.read_csv(self.len2s,header=None,sep = '\t')
+        chrlens_x = pd.read_csv(self.len1s,header=None,sep = '\t')
+        chrlens_x[3] = chrlens_x[2].values / chrlens_x[2].sum() * 1000
+        chrlens_x[3] = chrlens_x[3].apply(lambda x:int(x))
+        chrlens_y[3] = chrlens_y[2].values / chrlens_y[2].sum() * 1000
+        chrlens_y[3] = chrlens_y[3].apply(lambda x:int(x))
+        width = []
+        height = []
+        for i in self.chr1s:
+            wid = chrlens_x[chrlens_x[0]==i][3].values[0]
+            width.append(wid)
+        for i in self.chr2s:
+            hei = chrlens_y[chrlens_y[0]==i][3].values[0]
+            height.append(hei)
+        plt.figure(figsize=(len(chr1s),len(chr2s)), dpi=100)  #在前边动态设置根据要画几个图，len
+        gs = plt.GridSpec(sum(height),sum(width),wspace=0, hspace=0)
+        w = 0
+        h = 0
+        for p in range(len(self.chr2s)): #行
+            w = 0
+            for k in range(len(self.chr1s)):  #列
+                bla = bl[bl['chr1']==chr1s[k]]
+                bla = bla[bla['chr2']==chr2s[p]]
+                bla = bla[bla["pvalue"] <0.01]
+                bla["block1"]= bla["block1"].apply(lambda x: x.split('_'))
+                bla["block2"] = bla["block2"].apply(lambda x: x.split('_'))
+                x = []
+                y = []
+                for i in bla["block1"]:
+                    x = x + i
+                for i in bla["block2"]:
+                    y = y + i
+                n_x = [int(i) for i in x]
+                n_y = [int(i) for i in y]
+                chrlen_y = chrlens_y[chrlens_y[0]==chr2s[p]][2].values[0]
+                y1 = [chrlen_y-i for i in n_y]
+                chrlen_x = chrlens_x[chrlens_x[0]==chr1s[k]][2].values[0]
+                ax = plt.subplot(gs[h:h+height[p], w:w+width[k]])
+                w += width[k]
+
+                for i in n_k:
+                    if i[0]==chr1s[k] and i[1]==chr2s[p]:
+                        l_x = i[3]
+                        l_y = i[4]
+                        r_x = i[6]
+                        r_y = i[7]
+                        ax.plot([l_x,l_x],[l_y,r_y],color = 'blue',linewidth=1)
+                        ax.plot([r_x,r_x],[l_y,r_y],color = 'blue',linewidth=1)
+                        ax.plot([l_x,r_x],[l_y,l_y],color = 'blue',linewidth=1)
+                        ax.plot([l_x,r_x],[r_y,r_y],color = 'blue',linewidth=1)
+
+                ax.scatter(n_x, y1, s=0.3, c='red')
+                ax.set_xticks([]),ax.set_yticks([])
+                try:
+                    ax.set_xlim(-20,max(n_x)+100)
+                except:
+                    ''
+                ax.set_ylim(0,chrlen_y)
+                if k==0:
+                    ax.set_ylabel(chr2s[p])  
+                if p==0:
+                    ax.set_title(chr1s[k])
+            h += height[p]
+        plt.savefig(imgname,bbox_inches='tight')
+    plt.show() 
+    
+    def combine(self,num):
+        data = pd.read_csv(self.spath3)
+        bl = pd.read_csv(self.csvpath)
+        chrlens_y = pd.read_csv(self.len2s,header=None,sep = '\t')
+        chrlens_x = pd.read_csv(self.len1s,header=None,sep = '\t')
+        chrlens_x[3] = chrlens_x[2].values / chrlens_x[2].sum() * 1000
+        chrlens_x[3] = chrlens_x[3].apply(lambda x:int(x))
+        chrlens_y[3] = chrlens_y[2].values / chrlens_y[2].sum() * 1000
+        chrlens_y[3] = chrlens_y[3].apply(lambda x:int(x))
+        for j in range(1,num+1):
+            df1 = data[data['zuheid']==j]
+            print(df1)
+            train_data = np.array(df1) #先将数据框转换为数组
+            n_k = train_data.tolist()
+            chr1s = list(set(df1['chr1']))
+            chr1s.sort()
+            chr2s = list(set(df1['chr2']))
+            chr2s.sort()
+            width = []
+            height = []
+            for i in chr1s:
+                wid = chrlens_x[chrlens_x[0]==i][3].values[0]
+                width.append(wid)
+            for i in chr2s:
+                hei = chrlens_y[chrlens_y[0]==i][3].values[0]
+                height.append(hei)
+            plt.figure(figsize=(len(chr1s),len(chr2s)), dpi=100)
+            gs = plt.GridSpec(sum(height),sum(width),wspace=0, hspace=0)
+            w = 0
+            h = 0
+            for p in range(len(chr2s)): #行
+                w = 0
+                for k in range(len(chr1s)):  #列
+                    bla = bl[bl['chr1']==chr1s[k]]
+                    bla = bla[bla['chr2']==chr2s[p]]
+                    bla = bla[bla["pvalue"] <0.01]
+                    bla["block1"]= bla["block1"].apply(lambda x: x.split('_'))
+                    bla["block2"] = bla["block2"].apply(lambda x: x.split('_'))
+                    x = []
+                    y = []
+                    for i in bla["block1"]:
+                        x = x + i
+                    for i in bla["block2"]:
+                        y = y + i
+                    n_x = [int(i) for i in x]
+                    n_y = [int(i) for i in y]
+                    chrlen_y = chrlens_y[chrlens_y[0]==chr2s[p]][2].values[0]
+                    y1 = [chrlen_y-i for i in n_y]
+                    chrlen_x = chrlens_x[chrlens_x[0]==chr1s[k]][2].values[0]
+                    ax = plt.subplot(gs[h:h+height[p], w:w+width[k]])
+                    w += width[k]
+
+                    for i in n_k:
+                        if i[0]==chr1s[k] and i[1]==chr2s[p]:
+                            l_x = i[3]
+                            l_y = i[4]
+                            r_x = i[6]
+                            r_y = i[7]
+                            ax.plot([l_x,l_x],[l_y,r_y],color = 'blue',linewidth=1)
+                            ax.plot([r_x,r_x],[l_y,r_y],color = 'blue',linewidth=1)
+                            ax.plot([l_x,r_x],[l_y,l_y],color = 'blue',linewidth=1)
+                            ax.plot([l_x,r_x],[r_y,r_y],color = 'blue',linewidth=1)
+
+                    ax.scatter(n_x, y1, s=0.3, c='red')
+                    ax.set_xticks([]),ax.set_yticks([])
+                    try:
+                        ax.set_xlim(-20,max(n_x)+100)
+                    except:
+                        ''
+                    ax.set_ylim(0,chrlen_y)
+                    if k==0:
+                        ax.set_ylabel(chr2s[p])  
+                    if p==0:
+                        ax.set_title(chr1s[k])
+                h += height[p]
+            plt.savefig("sv{}.png".format(j),bbox_inches='tight')
+        plt.show() 
+
+    def savefile(self,df,spath,columns):
+        if os.path.exists(spath):
+            df.to_csv(spath, mode='a',encoding='utf_8_sig',header = False,columns=columns,index=False)
+        else:
+            df.to_csv(spath,encoding='utf_8_sig',columns=columns,index=False)
+        print("保存成功！")
+        
+        
+        
+        
+        
+ if __name__ == "__main__":
+    csvpath = r'SpuVvi.csv'
+    chr1s = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+#     chr1s = [10]
+    chr2s = [13]
+    spath1 = 'try13-1.csv'
+    spath2 = 'try13-2.csv'
+    spath3 = 'try13-3.csv'
+    len1s =  'Spu.len'  #目标
+    len2s =  'Vvi.len' #参考
+    a = Draw_Kuang(csvpath,chr1s,chr2s,spath1,spath2,spath3,len1s,len2s)
+    a.huatu()
+    a.cells()
+    a.cells_last()
+    a.zuhe()
+    a.combine(3)
+    
+    
+    
+    
+    
+    
+import pandas as pd 
+import matplotlib.pyplot as plt
+import numpy as np
+def zhexian(spath,len2s):
+    chrlens_y = pd.read_csv(len2s,header=None,sep = '\t')
+    data = pd.read_csv(spath)
+    c2 = list(set(data['chr2']))
+    plt.rcParams['font.sans-serif']=['SimHei']
+    plt.rcParams['axes.unicode_minus'] = False
+    for i in c2:
+        data1 = data[data['chr2']==i]
+        hei = chrlens_y[chrlens_y[0]==i][2].values[0]
+        sumy = list(set(data1['sumy']))
+        nsumy = [i/hei*100 for i in sumy]
+        nsumy.sort(reverse=True)
+        nsumy.append(0)
+        print(nsumy)
+        x = np.arange(1,len(nsumy)+1)
+        plt.plot(x,nsumy,'black',markersize = 10)#线条颜色和粗细
+        plt.ylim(0,100)
+        plt.tick_params(labelsize=15)#坐标轴字体大小
+        plt.xlabel("组合轮次",fontsize=20)
+        plt.ylabel("MI",fontsize=20)
+        plt.xticks(range(1,len(nsumy)+1)) ##
+        plt.savefig("zhexian{}.png".format(i),dpi=600,bbox_inches='tight')
+        plt.show()
+zhexian('try13-3.csv','Vvi.len')
